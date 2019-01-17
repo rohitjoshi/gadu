@@ -1,0 +1,12 @@
+[package]
+name = "gadu"
+version = "0.1.0"
+authors = ["Rohit Joshi <rohit.c.joshi@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+log="*"
+url="1.7.2"
+futures = "0.1.23"
+mio = "0.6"
+mio-uds = "0.6"
