@@ -10,3 +10,16 @@ url="1.7.2"
 futures = "0.1.23"
 mio = "0.6"
 mio-uds = "0.6"
+crossbeam = "0.3"
+serde = "1.0.27"
+serde_derive = "1.0.27"
+serde_json="*"
+crossbeam-channel = "0.3.2"
+
+[features]
+default=[]
+ssl = ["openssl"]
+
+[dependencies.openssl]
+optional = true
+version= "0.10.16"

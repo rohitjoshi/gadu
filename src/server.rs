@@ -1,15 +1,30 @@
-use mio::*;
-use std::collections::HashMap;
+/************************************************
+
+   File Name: gadu:server
+   Author: Rohit Joshi <rohit.c.joshi@gmail.com>
+   Date: 2019-02-17:15:15
+   License: Apache 2.0
+
+**************************************************/
+#[cfg(feature = "ssl")]
+use openssl::ssl::{SslConnectorBuilder, SslAcceptor, SslMethod, SslStream, SslFiletype, SslVerifyMode};
+
+#[cfg(feature = "ssl")]
+use openssl::error::ErrorStack;
+#[cfg(feature = "ssl")]
+use openssl::x509;
+
 //use std::io::{Read, Write};
 use std::io::Error;
 use std::time::Duration;
-use std::io;
+
 use mio::*;
 use mio::net::TcpListener;
 use mio_uds::UnixListener;
 use url::Url;
-
+use crate::config::GaduConfig;
 use crate::conn::{Conn,NetStream, NetAddr};
+
 
 
 pub enum NetListener {
@@ -23,100 +38,160 @@ pub enum NetListener {
 }
 
 impl NetListener {
-    pub fn accept_connection(&self) -> Result<(NetStream,NetAddr), Error>{
+    pub fn accept_tcp_connection(listener: &TcpListener, config : &GaduConfig) -> Result<(NetStream,NetAddr), Error>{
+        let s = listener.accept()?;
+        debug!("New peer connection received from: {:?}", s.1);
+        if let Err(e) = s.0.set_keepalive(Some(Duration::from_millis(config.keep_alive_time))) {
+            error!("Failed to set keepalive. Error:{:?}", e);
+        }
+        Ok((NetStream::UnsecuredTcpStream(s.0), NetAddr::NetSocketAddress(s.1)))
+        /*
+        match conn_res {
+            Ok(s) => {
+                debug!("New peer connection received from: {:?}", s.1);
+                s.0.set_keepalive(Some(Duration::from_millis(config.keep_alive_time)));
+                Ok((NetStream::UnsecuredTcpStream(s.0), NetAddr::NetSocketAddress(s.1)))
+            },
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock =>
+                {
+                    Err(Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "Failed to accept new connection",
+                    ))
+                },
+            Err(e) => panic!("encountered IO error: {}", e),
+        }*/
+    }
+
+    pub fn accept_uds_connection(listener: &UnixListener) -> Result<(NetStream,NetAddr), Error>{
+        let s = listener.accept()?;
+        let (sock, addr) = s.unwrap();
+        //let addr = s.0.peer_addr().unwrap();
+        debug!("New peer connection received from: {:?}", addr);
+
+        Ok((NetStream::UdsStream(sock), NetAddr::UdsSocketAddress(addr)))
+        /*match conn_res {
+            Ok(s) => {
+                let (sock, addr) = s.unwrap();
+                //let addr = s.0.peer_addr().unwrap();
+                info!("New peer connection received from: {:?}", addr);
+
+                Ok((NetStream::UdsStream(sock), NetAddr::UdsSocketAddress(addr)))
+            },
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock =>
+                {
+                    Err(Error::new(
+                        io::ErrorKind::WouldBlock,
+                        format!("An UDS error occurred.({:?}",e)
+                        )
+                    )
+
+                },
+            Err(e) => panic!("encountered IO error: {}", e),
+        }*/
+    }
+    #[cfg(feature = "ssl")]
+    pub fn accept_ssl_connection(listener: &TcpListener, config : &GaduConfig, acceptor: Arc<SslAcceptor>) -> Result<(NetStream,NetAddr), Error>{
+        let s = listener.accept()?;
+        debug!("New peer connection received from: {:?}", s.1);
+        s.0.set_keepalive(Some(Duration::from_millis(config.keep_alive_time)));
+        let stream = match acceptor.accept(s.0) {
+            Ok(s) => s,
+            Err(e) => {
+                return Err(
+                    Error::new(
+                        io::ErrorKind::Other,
+                        format!("An SSL error occurred.({:?}", e)
+                    )
+                );
+            }
+        };
+
+        Ok((NetStream::SslTcpStream(stream), NetAddr::NetSocketAddress(s.1)))
+        /*
+        match listener.accept() {
+            Ok(s) => {
+                info!("New peer connection received from: {:?}", s.1);
+                s.0.set_keepalive(Some(Duration::from_millis(config.keep_alive_time)));
+                let stream = match acceptor.accept(s.0) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        return Err(
+                            Error::new(
+                                io::ErrorKind::Other,
+                                format!("An SSL error occurred.({:?}", e)
+                            )
+                        );
+                    }
+                };
+
+                Ok((NetStream::SslTcpStream(stream), NetAddr::NetSocketAddress(s.1)))
+            },
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock =>
+                {
+                    Err(Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "Failed to accept new connection",
+                    ))
+                },
+            Err(e) => panic!("encountered IO error: {}", e),
+        }*/
+    }
+    /*
+    pub fn accept_connection(&self, config : &GaduConfig, acceptor: Arc<SslAcceptor>) -> Result<(NetStream,NetAddr), Error>{
 
 
          match self {
             &NetListener::UnsecuredTcpListener(ref listener) => {
-                let conn_res = listener.accept();
-                match conn_res {
-                    Ok(s) => {
-                        info!("New peer connection received from: {:?}", s.1);
-                        s.0.set_keepalive(Some(Server::KEEP_ALIVE_TIME)).unwrap();
-                        Ok((NetStream::UnsecuredTcpStream(s.0), NetAddr::NetSocketAddress(s.1)))
-                    },
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock =>
-                        {
-                             Err(Error::new(
-                                io::ErrorKind::WouldBlock,
-                                "Failed to accept new connection",
-                            ))
-                        },
-                    Err(e) => panic!("encountered IO error: {}", e),
-                }
+                NetListener::accept_tcp_connection(&listener, &config)
             }
             #[cfg(feature = "ssl")]
             &NetListener::SslTcpListener(ref listener) => {
-                let conn_res = listener.accept();
-                match conn_res {
-                    Ok(s) => {
-                        info!("New peer connection received from: {:?}", s.1);
-                        s.0.set_keepalive(Some(Server::KEEP_ALIVE_TIME)).unwrap();
-                        Ok((NetStream::UnsecuredTcpStream(s.0), NetAddr::NetSocketAddress(s.1)))
-                    },
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock =>
-                        {
-                             Err(Error::new(
-                                io::ErrorKind::WouldBlock,
-                                "Failed to accept new connection",
-                            ))
-                        },
-                    Err(e) => panic!("encountered IO error: {}", e),
-                }
+                NetListener::accept_ssl_connection(&listener, &config, acceptor)
             },
             &NetListener::UdsListener(ref listener) => {
-                let conn_res = listener.accept();
-                match conn_res {
-                    Ok(s) => {
-                        let (sock, addr) = s.unwrap();
-                        //let addr = s.0.peer_addr().unwrap();
-                        info!("New peer connection received from: {:?}", addr);
-
-                        Ok((NetStream::UdsStream(sock), NetAddr::UdsSocketAddress(addr)))
-                    },
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock =>
-                        {
-                             Err(Error::new(
-                                io::ErrorKind::WouldBlock,
-                                "Failed to accept new connection",
-                            ))
-                        },
-                    Err(e) => panic!("encountered IO error: {}", e),
-                }
+                NetListener::accept_uds_connection(&listener, &config)
             }
         }
 
-    }
+    }*/
 }
 pub struct Server {
-    pub id : Token,
-    pub url: Url, //unix:/server/sock  or tcp://host:port, ssl://host:port
+    pub id: Token,
+    pub config : GaduConfig,
+    pub url: Url,
     pub server: NetListener,
+    #[cfg(feature = "ssl")]
+    acceptor : Arc<SslAcceptor>
 }
 
 impl Server {
 
-    pub const KEEP_ALIVE_TIME: Duration = Duration::from_secs(600); //10 min
 
-    pub fn init(token_id: usize, url_addr: &str) -> Result<Server, String> {
 
-        let url = match Url::parse(url_addr) {
+
+
+    pub fn init(token_id: usize, config: &GaduConfig) -> Result<Server, String> {
+        #[cfg(feature = "ssl")]
+        info!("SSL Server initializing..");
+        let url = match Url::parse(&config.url) {
             Ok(url) => url,
             Err(e) => {
                 return Err(e.to_string());
             }
         };
         let net_server = match url.scheme() {
+            #[cfg(not(feature = "ssl"))]
             "tcp" => {
                 if !url.has_host() {
                     return Err("Invalid Url.  It must have host defined. e.g. tcp://host:port".to_owned());
                 }
-                if !url.port().is_none() {
+                if url.port().is_none() {
                     return Err("Invalid Url.  It must have port defined. e.g. tcp://host:port".to_owned());
                 }
                 let addr = format!("{}:{}", url.host_str().unwrap(), url.port().unwrap());
 
-                debug!("Binding Server at {}", url_addr);
+                debug!("Binding Server at {}", &config.url);
 
                 let server = match TcpListener::bind(&addr.parse().unwrap()) {
                     Ok(sock) => sock,
@@ -125,8 +200,37 @@ impl Server {
                         return Err(e.to_string());
                     }
                 };
+
                 info!("Tcp Server started on {}", addr);
                 NetListener::UnsecuredTcpListener(server)
+
+            },
+            #[cfg(feature = "ssl")]
+            "tcp"|"ssl" | "tls" => {
+                info!("SSL enabled");
+                if !url.has_host() {
+                    return Err("Invalid Url.  It must have host defined. e.g. ssl://host:port".to_owned());
+                }
+                if url.port().is_none() {
+                    return Err("Invalid Url.  It must have port defined. e.g. ssl://host:port".to_owned());
+                }
+                let addr = format!("{}:{}", url.host_str().unwrap(), url.port().unwrap());
+
+                debug!("Binding Server at {}", &config.url);
+
+                let server = match TcpListener::bind(&addr.parse().unwrap()) {
+                    Ok(sock) => sock,
+                    Err(e) => {
+                        error!("EventHandler: Couldn't bind at {}. Error: {:?}", addr, e);
+                        return Err(e.to_string());
+                    }
+                };
+
+                info!("Secure Server started on {}", addr);
+
+                NetListener::SslTcpListener(server)
+
+
             },
             "unix" => {
                 let path= url.path();
@@ -152,22 +256,73 @@ impl Server {
 
         Ok(Server {
             id: Token(token_id),
+            config: config.clone(),
             url,
             server: net_server,
+            #[cfg(feature = "ssl")]
+            acceptor : Arc::new(Server::init_ssl_acceptor(&config)?)
         })
 
     }
     pub fn accept_connection(&self) -> Result<Conn, Error> {
-        let (net_stream, net_addr) = self.server.accept_connection()?;
-        Ok(Conn {
-            url: self.url.clone(),
-            stream: net_stream,
-            addr:net_addr,
-            close: false,
-            reg_write: false,
-            input: Vec::new(),
-            output: Vec::new(),
-            tags: HashMap::with_capacity(2),
-        })
+
+        let (net_stream, net_addr) = match self.server {
+            NetListener::UnsecuredTcpListener(ref listener) => {
+                NetListener::accept_tcp_connection(&listener, &self.config)?
+            }
+            #[cfg(feature = "ssl")]
+            NetListener::SslTcpListener(ref listener) => {
+                NetListener::accept_ssl_connection(&listener, &self.config, self.acceptor.clone())?
+            },
+            NetListener::UdsListener(ref listener) => {
+                NetListener::accept_uds_connection(&listener)?
+            }
+        };
+
+        Ok(Conn::new(net_stream,net_addr))
+
+    }
+    #[cfg(feature = "ssl")]
+    fn init_ssl_acceptor(config: &GaduConfig) -> Result<SslAcceptor, String> {
+        match Server::build_acceptor(&config) {
+            Ok(acceptor) => Ok(acceptor),
+            Err(e) => Err(e.to_string())
+        }
+    }
+    #[cfg(feature = "ssl")]
+    fn build_acceptor(config: &GaduConfig) -> Result<SslAcceptor, ErrorStack> {
+
+        let mut ctx = SslAcceptor::mozilla_intermediate(SslMethod::tls())?;
+        {
+            ctx.set_default_verify_paths()?;
+
+            // verify peer
+            if config.ssl_config.verify.unwrap_or(false) {
+                ctx.set_verify(SslVerifyMode::PEER);
+            } else {
+                ctx.set_verify(SslVerifyMode::NONE);
+            }
+            // verify depth
+            if config.ssl_config.verify_depth.unwrap_or(0) > 0 {
+                ctx.set_verify_depth(config.ssl_config.verify_depth.unwrap());
+            }
+            if config.ssl_config.certificate_file.is_some() {
+                ctx.set_certificate_file(
+                    config.ssl_config.certificate_file.as_ref().unwrap(),
+                    SslFiletype::PEM,
+                )?;
+            }
+            if config.ssl_config.private_key_file.is_some() {
+                ctx.set_private_key_file(
+                    config.ssl_config.private_key_file.as_ref().unwrap(),
+                    SslFiletype::PEM,
+                )?;
+            }
+            if config.ssl_config.ca_file.is_some() {
+                let _= ctx.set_ca_file(config.ssl_config.ca_file.as_ref().unwrap())?;
+            }
+        }
+        Ok(ctx.build())
+
     }
 }
