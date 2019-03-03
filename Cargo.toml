@@ -3,6 +3,14 @@ name = "gadu"
 version = "0.1.0"
 authors = ["Rohit Joshi <rohit.c.joshi@gmail.com>"]
 edition = "2018"
+description = "Async Networking library using MIO supports TCP, TLS and Unix Domain Socket"
+keywords=["networking", "mio", "tcp", "uds", "tls"]
+License="Apache 2.0"
+license-file="LICENSE"
+
+[badges]
+travis-ci = { repository = "https://github.com/rohitjoshi/gadu", branch = "master" }
+codecov = { repository = "https://github.com/rohitjoshi/gadu", branch = "master", service = "github" }
 
 [dependencies]
 log="*"
