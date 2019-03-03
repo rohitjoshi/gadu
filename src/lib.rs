@@ -9,12 +9,13 @@
 #![feature(integer_atomics)]
 #[macro_use]
 extern crate log;
-#[macro_use] extern crate serde_derive;
+#[macro_use]
+extern crate serde_derive;
 
-pub mod conn;
-pub mod server;
-pub mod events;
 pub mod config;
+pub mod conn;
+pub mod events;
+pub mod server;
 #[cfg(test)]
 mod tests {
 
@@ -26,7 +27,5 @@ mod tests {
     fn it_works() {
         assert_eq!(2 + 2, 4);
     }
-
-
 
 }

@@ -7,11 +7,9 @@
 
 **************************************************/
 
-use std::str;
 use std::fs::File;
 use std::io::prelude::*;
-
-
+use std::str;
 
 #[cfg(feature = "ssl")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -28,7 +26,6 @@ pub struct SSLConfig {
     pub verify: Option<bool>,
     /// Verify depth
     pub verify_depth: Option<u32>,
-
 }
 #[cfg(feature = "ssl")]
 impl Default for SSLConfig {
@@ -38,8 +35,7 @@ impl Default for SSLConfig {
             private_key_file: None,
             ca_file: None,
             verify: None,
-            verify_depth: None
-
+            verify_depth: None,
         }
     }
 }
@@ -50,11 +46,11 @@ pub struct GaduConfig {
     /// Read timeout.
     pub read_timeout: usize,
     /// Write timeout.
-    pub write_timeout:usize,
+    pub write_timeout: usize,
     /// keep alive time
     pub keep_alive_time: u64,
     #[cfg(feature = "ssl")]
-    pub ssl_config : SSLConfig
+    pub ssl_config: SSLConfig,
 }
 
 impl Default for GaduConfig {
@@ -65,8 +61,7 @@ impl Default for GaduConfig {
             write_timeout: 60_000,
             keep_alive_time: 60_000,
             #[cfg(feature = "ssl")]
-            ssl_config: SSLConfig::default()
-
+            ssl_config: SSLConfig::default(),
         }
     }
 }

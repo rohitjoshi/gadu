@@ -7,41 +7,45 @@
 
 **************************************************/
 
-use mio::{Events, Poll, Ready, PollOpt, Token};
-use crate::conn::{Conn, NetStream, NetAddr};
-use crate::server::{Server};
-use hashbrown::HashMap;
-use std::sync::Arc;
-use parking_lot::Mutex;
-use std::sync::atomic::Ordering;
+use crate::conn::{Conn, NetAddr, NetStream};
+use crate::server::Server;
 use mio::event::Event;
 use mio::unix::UnixReady;
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use parking_lot::Mutex;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-
-
-use std::sync::atomic::AtomicBool;
 use crate::config::GaduConfig;
 use crossbeam_channel as mpsc;
+use hashbrown::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 pub trait NetEvents {
     fn event_opened(&self, id: usize, conn: &mut Conn) -> (Vec<u8>, bool);
-    fn event_closed(&self, id: usize, conn: &mut Conn)-> Result<bool, String>;
-    fn event_data(&self, id: usize, conn_tags: &mut HashMap<String, String>, buffer: &mut Vec<u8>)->(Vec<u8>, bool);
-
-
+    fn event_closed(&self, id: usize, conn: &mut Conn) -> Result<bool, String>;
+    fn event_data(
+        &self,
+        id: usize,
+        conn_tags: &mut HashMap<String, String>,
+        buffer: &mut Vec<u8>,
+    ) -> (Vec<u8>, bool);
 }
 
 pub struct ServerEventHandler {
-    pub server_id : usize,
-    pub server : Server,
+    pub server_id: usize,
+    pub server: Server,
     pub conn_handlers: Vec<Arc<ConnEventHandler>>,
-    pub shutdown : bool
-
+    pub shutdown: bool,
 }
 
-impl ServerEventHandler{
-    pub fn new (server_id: usize, num_threads: usize, config: &GaduConfig) -> Result<ServerEventHandler, String> {
+impl ServerEventHandler {
+    pub fn new(
+        server_id: usize,
+        num_threads: usize,
+        config: &GaduConfig,
+    ) -> Result<ServerEventHandler, String> {
         let server = Server::init(server_id, config)?;
         let mut conn_handlers = Vec::with_capacity(num_threads);
         for _i in 0..num_threads {
@@ -52,10 +56,9 @@ impl ServerEventHandler{
             server_id,
             server,
             conn_handlers,
-            shutdown: false
+            shutdown: false,
         })
     }
-
 
     /*
     pub fn run_loop<T:NetEvents>(&mut self, event_handler: Arc<T>) where T: NetEvents + 'static + Sync + Send + Sized {
@@ -89,21 +92,17 @@ impl ServerEventHandler{
 
         });
     }*/
-
 }
-
-
 
 pub struct ConnEventHandler {
     pub conns: Arc<Mutex<HashMap<usize, Conn>>>,
     pub poll: Poll,
     //receiver: mpsc::Receiver<ConnMsg>,
     //sender: mpsc::Sender<ConnMsg>
-
 }
 
-unsafe impl  Send for ConnEventHandler {}
-unsafe impl  Sync for ConnEventHandler {}
+unsafe impl Send for ConnEventHandler {}
+unsafe impl Sync for ConnEventHandler {}
 /*
 impl NetEvents for ConnEventHandler {
     ///
@@ -133,32 +132,29 @@ impl NetEvents for ConnEventHandler {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConnMsg {
-    pub id : usize,
-    pub output: Vec<u8>
+    pub id: usize,
+    pub output: Vec<u8>,
 }
 
-
 impl ConnEventHandler {
-
     pub fn new() -> Result<ConnEventHandler, String> {
-        let res=  Poll::new();
-        if let Err(e) =  res {
-            return {Err(e.to_string())}
+        let res = Poll::new();
+        if let Err(e) = res {
+            return { Err(e.to_string()) };
         }
         //let (sender, receiver) = mpsc::unbounded::<ConnMsg>();
         let conn_handler = ConnEventHandler {
             conns: Arc::new(Mutex::new(HashMap::new())),
-            poll:res.unwrap(),
-           // receiver,
-           // sender
-
+            poll: res.unwrap(),
+            // receiver,
+            // sender
         };
         Ok(conn_handler)
-
     }
-    pub fn add_connection(&self, id: usize,  conn: Conn) -> Result<(), String> {
+    pub fn add_connection(&self, id: usize, conn: Conn) -> Result<(), String> {
         debug!("ConnEventHandler::add_connection with id:{}", id);
-        if let Err(e) = self.register(id, &conn) {// read only
+        if let Err(e) = self.register(id, &conn) {
+            // read only
             return Err(e.to_string());
         }
         self.conns.lock().insert(id, conn);
@@ -176,52 +172,62 @@ impl ConnEventHandler {
     pub fn register(&self, id: usize, conn: &Conn) -> Result<(), String> {
         debug!("Register connection with id: {}", id);
         if !conn.output.is_empty() {
-
-            if let Err(e) = self.reregister( &conn, id, false) {// read | write *
-              return Err(e.to_string());
+            if let Err(e) = self.reregister(&conn, id, false) {
+                // read | write *
+                return Err(e.to_string());
             }
-
-        } else if !conn.close{
-            if let Err(e) = self.reregister( &conn, id, true) {// read only
+        } else if !conn.close {
+            if let Err(e) = self.reregister(&conn, id, true) {
+                // read only
                 return Err(e.to_string());
             }
         }
 
         Ok(())
     }
-    fn reregister(&self, conn: &Conn, id: usize, readable_only: bool) -> Result<(), String>{
+    fn reregister(&self, conn: &Conn, id: usize, readable_only: bool) -> Result<(), String> {
         debug!("Reregister connection with id: {}", id);
         let flags = if !readable_only {
             Ready::writable() | Ready::readable()
         } else {
             Ready::readable()
         };
-        let res = match conn.get_stream()  {
-            NetStream::UnsecuredTcpStream(ref stream) =>  self.poll.register(stream, Token(id), flags, PollOpt::empty()),
-            NetStream::UdsStream(ref stream) => self.poll.register(stream, Token(id), flags, PollOpt::empty()),
+        let res = match conn.get_stream() {
+            NetStream::UnsecuredTcpStream(ref stream) => {
+                self.poll
+                    .register(stream, Token(id), flags, PollOpt::empty())
+            }
+            NetStream::UdsStream(ref stream) => {
+                self.poll
+                    .register(stream, Token(id), flags, PollOpt::empty())
+            }
             #[cfg(feature = "ssl")]
-            NetStream::SslTcpStream(ref stream) => self.poll.register(stream.get_ref(), Token(id), flags, PollOpt::empty()),
-
+            NetStream::SslTcpStream(ref stream) => {
+                self.poll
+                    .register(stream.get_ref(), Token(id), flags, PollOpt::empty())
+            }
         };
         if let Err(e) = res {
             error!("Failed to register connection with id:{}", id);
-            return Err(format!("Failed to register connection with id:{}. Error:{:?}", id, e).to_owned());
+            return Err(format!(
+                "Failed to register connection with id:{}. Error:{:?}",
+                id, e
+            )
+            .to_owned());
         }
         Ok(())
     }
-    fn deregister(& self, id: usize, conn: &Conn) {
+    fn deregister(&self, id: usize, conn: &Conn) {
         debug!("Deregister connection with id: {}", id);
         let _res = match conn.get_stream() {
             NetStream::UnsecuredTcpStream(ref stream) => self.poll.deregister(stream),
             NetStream::UdsStream(ref stream) => self.poll.deregister(stream),
             #[cfg(feature = "ssl")]
             NetStream::SslTcpStream(ref stream) => self.poll.deregister(stream.get_ref()),
-
         };
-
     }
 
-    pub fn check_error_event( addr: &NetAddr, event: &Event) -> bool {
+    pub fn check_error_event(addr: &NetAddr, event: &Event) -> bool {
         debug!("check_error_event:event:{:?}", event.readiness());
         let er = UnixReady::from(event.readiness());
         if er.is_hup() {
@@ -229,23 +235,25 @@ impl ConnEventHandler {
                 "UnixReady:Closing peer connection {} due to HUP signal received ",
                 addr.to_string()
             );
-           return true;
+            return true;
         } else if er.is_error() {
             warn!(
                 "UnixReady:Closing peer connection {} due to error signal received ",
                 addr.to_string()
             );
-           return true;
+            return true;
         }
-         false
+        false
     }
 
     pub fn child_loop_new<T>(
         &self,
         event_handler: &T,
         receiver: Option<mpsc::Receiver<ConnMsg>>,
-        shutdown: Arc<AtomicBool>
-    ) where T: NetEvents + ?Sized {
+        shutdown: Arc<AtomicBool>,
+    ) where
+        T: NetEvents + ?Sized,
+    {
         let mut streams: HashMap<usize, Conn> = HashMap::new();
         let mut events = Events::with_capacity(2048);
         let mut read_buffer = [0; 32768];
@@ -253,7 +261,6 @@ impl ConnEventHandler {
         let timeout = Some(Duration::from_millis(5000));
 
         loop {
-
             //check if shutdown signal received
             if shutdown.load(Ordering::SeqCst) {
                 info!("Shutdown received. exiting child connection loop");
@@ -286,7 +293,6 @@ impl ConnEventHandler {
 
             debug!("Child Poll: Total events received:{}", total_events);
 
-
             for event in &events {
                 let token = event.token();
 
@@ -311,16 +317,10 @@ impl ConnEventHandler {
                             } else if !conn.close {
                                 close = conn.read(&mut read_buffer);
                                 // PROFILER.lock().unwrap().start("/tmp/my-prof.profile").expect("Couldn't start");
-                                let (output, close_conn) = event_handler.event_data(
-                                    id,
-                                    &mut conn.tags,
-                                    &mut conn.input,
-                                );
+                                let (output, close_conn) =
+                                    event_handler.event_data(id, &mut conn.tags, &mut conn.input);
                                 // PROFILER.lock().unwrap().stop().expect("Couldn't stop");
-                                debug!(
-                                    "event_data output:{}",
-                                    String::from_utf8_lossy(&output)
-                                );
+                                debug!("event_data output:{}", String::from_utf8_lossy(&output));
                                 conn.output.extend(&output);
                                 conn.close = close_conn;
                             }
@@ -335,16 +335,16 @@ impl ConnEventHandler {
                         debug!("Reregistering child sock for read and write");
                         if !conn.reg_write {
                             conn.reg_write = true;
-                            if let Err(e) = self.reregister( &conn, id, false) {
-                                error!("Failed to reregister. Error:{:?}", e);//FIXME: should this be closed
+                            if let Err(e) = self.reregister(&conn, id, false) {
+                                error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
                             }
                         }
                     } else {
                         debug!("Reregistering child sock for read only");
                         if conn.reg_write {
                             conn.reg_write = false;
-                            if let Err(e) = self.reregister( &conn, id, true) {
-                                error!("Failed to reregister. Error:{:?}", e);//FIXME: should this be closed
+                            if let Err(e) = self.reregister(&conn, id, true) {
+                                error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
                             }
                         }
                         if !close {
@@ -354,13 +354,13 @@ impl ConnEventHandler {
                     if close {
                         debug!("Socket is closed.. shutting down");
                         conn.shutdown();
-                        self.deregister(id,&conn);
+                        self.deregister(id, &conn);
                         if let Ok(true) = event_handler.event_closed(id, &mut conn) {
                             if self.register(id, &conn).is_ok() {
                                 debug!("Auto reconnect successful. Reregistering socket");
                                 conn.reg_write = false;
-                                if let Err(e) = self.reregister( &conn, id, true){
-                                    error!("Failed to reregister. Error:{:?}", e);//FIXME: should this be closed
+                                if let Err(e) = self.reregister(&conn, id, true) {
+                                    error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
                                 }
                                 close = false;
                             }
@@ -368,14 +368,16 @@ impl ConnEventHandler {
                         if close {
                             self.conns.lock().remove(&id);
                         }
-
                     }
                 }
                 if close {
                     streams.remove(&id);
-                    debug!("Number of registered connections :{}, Number of new connection: {}",
-                           streams.len(), self.conns.lock().len());
-                }else if !found {
+                    debug!(
+                        "Number of registered connections :{}, Number of new connection: {}",
+                        streams.len(),
+                        self.conns.lock().len()
+                    );
+                } else if !found {
                     if let Some(conn) = self.conns.lock().remove(&id) {
                         if self.register(id, &conn).is_ok() {
                             streams.insert(id, conn);
@@ -384,14 +386,12 @@ impl ConnEventHandler {
                 }
             }
         }
-
     }
 
-    pub fn child_loop<T>(
-        &self,
-        event_handler: Arc<T>,
-        shutdown: Arc<AtomicBool>
-    ) where T: NetEvents + 'static + Sync + Send + Sized {
+    pub fn child_loop<T>(&self, event_handler: Arc<T>, shutdown: Arc<AtomicBool>)
+    where
+        T: NetEvents + 'static + Sync + Send + Sized,
+    {
         let mut streams: HashMap<usize, Conn> = HashMap::new();
         let mut events = Events::with_capacity(2048);
         let mut read_buffer = [0; 32768];
@@ -399,7 +399,6 @@ impl ConnEventHandler {
         let timeout = Some(Duration::from_millis(5000));
 
         loop {
-
             //check if shutdown signal received
             if shutdown.load(Ordering::SeqCst) {
                 info!("Shutdown received. exiting child connection loop");
@@ -430,7 +429,6 @@ impl ConnEventHandler {
 
             debug!("Child Poll: Total events received:{}", total_events);
 
-
             for event in &events {
                 let token = event.token();
 
@@ -455,16 +453,10 @@ impl ConnEventHandler {
                             } else if !conn.close {
                                 close = conn.read(&mut read_buffer);
                                 // PROFILER.lock().unwrap().start("/tmp/my-prof.profile").expect("Couldn't start");
-                                let (output, close_conn) = event_handler.event_data(
-                                    id,
-                                    &mut conn.tags,
-                                    &mut conn.input,
-                                );
+                                let (output, close_conn) =
+                                    event_handler.event_data(id, &mut conn.tags, &mut conn.input);
                                 // PROFILER.lock().unwrap().stop().expect("Couldn't stop");
-                                debug!(
-                                    "event_data output:{}",
-                                    String::from_utf8_lossy(&output)
-                                );
+                                debug!("event_data output:{}", String::from_utf8_lossy(&output));
                                 conn.output.extend(&output);
                                 conn.close = close_conn;
                             }
@@ -479,16 +471,16 @@ impl ConnEventHandler {
                         debug!("Reregistering child sock for read and write");
                         if !conn.reg_write {
                             conn.reg_write = true;
-                            if let Err(e) = self.reregister( &conn, id, false){
-                                error!("Failed to reregister. Error:{:?}", e);//FIXME: should this be closed
+                            if let Err(e) = self.reregister(&conn, id, false) {
+                                error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
                             }
                         }
                     } else {
                         debug!("Reregistering child sock for read only");
                         if conn.reg_write {
                             conn.reg_write = false;
-                            if let Err(e) = self.reregister( &conn, id, true){
-                                error!("Failed to reregister. Error:{:?}", e);//FIXME: should this be closed
+                            if let Err(e) = self.reregister(&conn, id, true) {
+                                error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
                             }
                         }
                         if !close {
@@ -498,13 +490,13 @@ impl ConnEventHandler {
                     if close {
                         debug!("Socket is closed.. shutting down");
                         conn.shutdown();
-                        self.deregister(id,&conn);
+                        self.deregister(id, &conn);
                         if let Ok(true) = event_handler.event_closed(id, &mut conn) {
                             if self.register(id, &conn).is_ok() {
                                 debug!("Auto reconnect successful. Reregistering socket");
                                 conn.reg_write = false;
-                                if let Err(e) = self.reregister( &conn, id, true){
-                                    error!("Failed to reregister. Error:{:?}", e);//FIXME: should this be closed
+                                if let Err(e) = self.reregister(&conn, id, true) {
+                                    error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
                                 }
                                 close = false;
                             }
@@ -512,14 +504,16 @@ impl ConnEventHandler {
                         if close {
                             self.conns.lock().remove(&id);
                         }
-
                     }
                 }
                 if close {
                     streams.remove(&id);
-                    debug!("Number of registered connections :{}, Number of new connection: {}",
-                    streams.len(), self.conns.lock().len());
-                }else if !found {
+                    debug!(
+                        "Number of registered connections :{}, Number of new connection: {}",
+                        streams.len(),
+                        self.conns.lock().len()
+                    );
+                } else if !found {
                     if let Some(conn) = self.conns.lock().remove(&id) {
                         if self.register(id, &conn).is_ok() {
                             streams.insert(id, conn);
