@@ -10,8 +10,9 @@
 use mio::{Events, Poll, Ready, PollOpt, Token};
 use crate::conn::{Conn, NetStream, NetAddr};
 use crate::server::{Server};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use hashbrown::HashMap;
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
 use mio::event::Event;
 use mio::unix::UnixReady;
@@ -160,7 +161,7 @@ impl ConnEventHandler {
         if let Err(e) = self.register(id, &conn) {// read only
             return Err(e.to_string());
         }
-        self.conns.lock().unwrap().insert(id, conn);
+        self.conns.lock().insert(id, conn);
         Ok(())
     }
 
@@ -365,7 +366,7 @@ impl ConnEventHandler {
                             }
                         }
                         if close {
-                            self.conns.lock().unwrap().remove(&id);
+                            self.conns.lock().remove(&id);
                         }
 
                     }
@@ -373,9 +374,9 @@ impl ConnEventHandler {
                 if close {
                     streams.remove(&id);
                     debug!("Number of registered connections :{}, Number of new connection: {}",
-                           streams.len(), self.conns.lock().unwrap().len());
+                           streams.len(), self.conns.lock().len());
                 }else if !found {
-                    if let Some(conn) = self.conns.lock().unwrap().remove(&id) {
+                    if let Some(conn) = self.conns.lock().remove(&id) {
                         if self.register(id, &conn).is_ok() {
                             streams.insert(id, conn);
                         }
@@ -509,7 +510,7 @@ impl ConnEventHandler {
                             }
                         }
                         if close {
-                            self.conns.lock().unwrap().remove(&id);
+                            self.conns.lock().remove(&id);
                         }
 
                     }
@@ -517,9 +518,9 @@ impl ConnEventHandler {
                 if close {
                     streams.remove(&id);
                     debug!("Number of registered connections :{}, Number of new connection: {}",
-                    streams.len(), self.conns.lock().unwrap().len());
+                    streams.len(), self.conns.lock().len());
                 }else if !found {
-                    if let Some(conn) = self.conns.lock().unwrap().remove(&id) {
+                    if let Some(conn) = self.conns.lock().remove(&id) {
                         if self.register(id, &conn).is_ok() {
                             streams.insert(id, conn);
                         }

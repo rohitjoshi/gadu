@@ -6,7 +6,7 @@
    License: Apache 2.0
 
 **************************************************/
-use std::collections::HashMap;
+use hashbrown::HashMap;
 use std::net::SocketAddr;
 use mio::net::TcpStream;
 #[cfg(feature = "ssl")]
