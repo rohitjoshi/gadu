@@ -33,3 +33,7 @@ ssl = ["openssl"]
 [dependencies.openssl]
 optional = true
 version= "0.10.16"
+
+
+[package]
+publish = false
