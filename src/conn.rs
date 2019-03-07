@@ -218,7 +218,11 @@ impl Conn {
                 } else {
                     self.input.extend_from_slice(&packet[0..n]);
                     //self.input.extend(&buffer);
-                    debug!("Received data: {}. Length:{}", String::from_utf8_lossy(&self.input), n);
+                    debug!(
+                        "Received data: {}. Length:{}",
+                        String::from_utf8_lossy(&self.input),
+                        n
+                    );
                 }
             }
             Err(ref e) => {

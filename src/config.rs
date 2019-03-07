@@ -97,3 +97,22 @@ impl GaduConfig {
         Ok(conf)
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NetworkServerConfig {
+    pub server_name: String,
+    pub server_id: usize,
+    pub num_threads: usize,
+    pub server_config: GaduConfig,
+}
+
+impl Default for NetworkServerConfig {
+    fn default() -> NetworkServerConfig {
+        NetworkServerConfig {
+            server_name: "".to_string(),
+            server_id: 0,
+            num_threads: 4,
+            server_config: GaduConfig::default(),
+        }
+    }
+}

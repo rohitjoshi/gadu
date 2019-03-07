@@ -14,6 +14,7 @@ extern crate serde_derive;
 pub mod config;
 pub mod conn;
 pub mod events;
+pub mod network_server;
 pub mod server;
 #[cfg(test)]
 mod tests {
