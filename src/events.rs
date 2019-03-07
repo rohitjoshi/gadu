@@ -21,6 +21,7 @@ use crossbeam_channel as mpsc;
 use hashbrown::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
+use std::thread;
 
 pub trait NetEvents {
     fn event_opened(&self, id: usize, conn: &mut Conn) -> (Vec<u8>, bool);
@@ -263,7 +264,7 @@ impl ConnEventHandler {
         loop {
             //check if shutdown signal received
             if shutdown.load(Ordering::SeqCst) {
-                info!("Shutdown received. exiting child connection loop");
+                info!("Shutdown received. exiting child connection loop. thread_id: {:?}", thread::current().id());
                 return;
             }
 
@@ -401,7 +402,7 @@ impl ConnEventHandler {
         loop {
             //check if shutdown signal received
             if shutdown.load(Ordering::SeqCst) {
-                info!("Shutdown received. exiting child connection loop");
+                info!("Shutdown received. exiting child connection loop. thread_id: {:?}", thread::current().id());
                 return;
             }
 
