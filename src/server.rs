@@ -6,14 +6,14 @@
    License: Apache 2.0
 
 **************************************************/
-#[cfg(feature = "ssl")]
+#[cfg(feature = "tls")]
 use openssl::ssl::{
     SslAcceptor, SslConnectorBuilder, SslFiletype, SslMethod, SslStream, SslVerifyMode,
 };
 
-#[cfg(feature = "ssl")]
+#[cfg(feature = "tls")]
 use openssl::error::ErrorStack;
-#[cfg(feature = "ssl")]
+#[cfg(feature = "tls")]
 use openssl::x509;
 
 //use std::io::{Read, Write};
@@ -29,7 +29,7 @@ use url::Url;
 
 pub enum NetListener {
     UnsecuredTcpListener(TcpListener),
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "tls")]
     SslTcpListener(TcpListener),
 
     /// Unix domain socket stream
@@ -97,7 +97,7 @@ impl NetListener {
             Err(e) => panic!("encountered IO error: {}", e),
         }*/
     }
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "tls")]
     pub fn accept_ssl_connection(
         listener: &TcpListener,
         config: &GaduConfig,
@@ -157,7 +157,7 @@ impl NetListener {
             &NetListener::UnsecuredTcpListener(ref listener) => {
                 NetListener::accept_tcp_connection(&listener, &config)
             }
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "tls")]
             &NetListener::SslTcpListener(ref listener) => {
                 NetListener::accept_ssl_connection(&listener, &config, acceptor)
             },
@@ -173,13 +173,13 @@ pub struct Server {
     pub config: GaduConfig,
     pub url: Url,
     pub server: NetListener,
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "tls")]
     acceptor: Arc<SslAcceptor>,
 }
 
 impl Server {
     pub fn init(token_id: usize, config: &GaduConfig) -> Result<Server, String> {
-        #[cfg(feature = "ssl")]
+        #[cfg(feature = "tls")]
         info!("SSL Server initializing..");
         let url = match Url::parse(&config.url) {
             Ok(url) => url,
@@ -215,7 +215,7 @@ impl Server {
                 info!("Tcp Server started on {}", addr);
                 NetListener::UnsecuredTcpListener(server)
             }
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "tls")]
             "tcp" | "ssl" | "tls" => {
                 info!("SSL enabled");
                 if !url.has_host() {
@@ -261,13 +261,15 @@ impl Server {
                 return Err("Unsupported scheme. Valid schemes are unix and tcp".to_owned());
             }
         };
+        
+        
 
         Ok(Server {
             id: Token(token_id),
             config: config.clone(),
             url,
             server: net_server,
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "tls")]
             acceptor: Arc::new(Server::init_ssl_acceptor(&config)?),
         })
     }
@@ -276,7 +278,7 @@ impl Server {
             NetListener::UnsecuredTcpListener(ref listener) => {
                 NetListener::accept_tcp_connection(&listener, &self.config)?
             }
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "tls")]
             NetListener::SslTcpListener(ref listener) => {
                 NetListener::accept_ssl_connection(&listener, &self.config, self.acceptor.clone())?
             }
@@ -287,14 +289,14 @@ impl Server {
 
         Ok(Conn::new(net_stream, net_addr))
     }
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "tls")]
     fn init_ssl_acceptor(config: &GaduConfig) -> Result<SslAcceptor, String> {
         match Server::build_acceptor(&config) {
             Ok(acceptor) => Ok(acceptor),
             Err(e) => Err(e.to_string()),
         }
     }
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "tls")]
     fn build_acceptor(config: &GaduConfig) -> Result<SslAcceptor, ErrorStack> {
         let mut ctx = SslAcceptor::mozilla_intermediate(SslMethod::tls())?;
         {

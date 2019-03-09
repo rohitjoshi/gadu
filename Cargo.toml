@@ -28,8 +28,7 @@ hashbrown = "0.1.8"
 parking_lot = "0.7.1"
 
 [features]
-default=[]
-ssl = ["openssl"]
+tls = ["openssl"]
 
 [dependencies.openssl]
 optional = true

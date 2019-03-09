@@ -85,7 +85,7 @@ impl NetworkServer {
         }
     }
 
-    pub fn run_loop<T>(scope: &Scope, network_server: Arc<NetworkServer>, net_event_handler: Arc<T>)
+    pub fn run_loop<T>(scope: &Scope, network_server: Arc<NetworkServer>, net_event_handler: Arc<T>, non_blocking:bool)
     where
         T: NetEvents + 'static + Sync + Send + Sized,
     {
@@ -98,6 +98,10 @@ impl NetworkServer {
         }
 
         info!("Starting kanudo server loop");
-        scope.spawn(move |_| network_server.server_loop(net_event_handler));
+        if non_blocking {
+            scope.spawn(move |_| network_server.server_loop(net_event_handler));
+        }else {
+            network_server.server_loop(net_event_handler)
+        }
     }
 }

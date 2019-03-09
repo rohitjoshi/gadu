@@ -9,7 +9,7 @@
 use hashbrown::HashMap;
 use mio::net::TcpStream;
 use mio_uds::UnixStream;
-#[cfg(feature = "ssl")]
+#[cfg(feature = "tls")]
 use openssl::ssl::SslStream;
 use std::net::Shutdown;
 use std::net::SocketAddr;
@@ -268,7 +268,7 @@ pub enum NetStream {
     UdsStream(UnixStream),
     /// An SSL-secured TcpStream.
     /// This is only available when compiled with SSL support.
-    #[cfg(feature = "ssl")]
+    #[cfg(feature = "tls")]
     SslTcpStream(SslStream<TcpStream>),
 }
 
@@ -277,7 +277,7 @@ impl NetStream {
         match *self {
             NetStream::UnsecuredTcpStream(ref stream) => stream.shutdown(Shutdown::Both),
             NetStream::UdsStream(ref stream) => stream.shutdown(Shutdown::Both),
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref mut stream) => {
                 stream.shutdown();
                 Ok(())
@@ -288,7 +288,7 @@ impl NetStream {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.read(buf),
             NetStream::UdsStream(ref mut stream) => stream.read(buf),
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref mut stream) => stream.read(buf),
         }
     }
@@ -296,7 +296,7 @@ impl NetStream {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.write(buf),
             NetStream::UdsStream(ref mut stream) => stream.write(buf),
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref mut stream) => {
                 // Arc::get_mut(stream).unwrap().write(buf)
                 stream.write(buf)
@@ -307,7 +307,7 @@ impl NetStream {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.write_all(buf),
             NetStream::UdsStream(ref mut stream) => stream.write_all(buf),
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref mut stream) => stream.write_all(buf),
         }
     }
@@ -315,7 +315,7 @@ impl NetStream {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.flush(),
             NetStream::UdsStream(ref mut stream) => stream.flush(),
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref mut stream) => stream.flush(),
         }
     }

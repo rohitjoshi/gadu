@@ -202,14 +202,14 @@ impl ConnEventHandler {
                 self.poll
                     .register(stream, Token(id), flags, PollOpt::empty())
             }
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref stream) => {
                 self.poll
                     .register(stream.get_ref(), Token(id), flags, PollOpt::empty())
             }
         };
         if let Err(e) = res {
-            error!("Failed to register connection with id:{}", id);
+            error!("Failed to register connection with id:{} for flag:{:?}. Error:{:?}", id, flags, e);
             return Err(format!(
                 "Failed to register connection with id:{}. Error:{:?}",
                 id, e
@@ -223,7 +223,7 @@ impl ConnEventHandler {
         let _res = match conn.get_stream() {
             NetStream::UnsecuredTcpStream(ref stream) => self.poll.deregister(stream),
             NetStream::UdsStream(ref stream) => self.poll.deregister(stream),
-            #[cfg(feature = "ssl")]
+            #[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref stream) => self.poll.deregister(stream.get_ref()),
         };
     }
@@ -259,7 +259,11 @@ impl ConnEventHandler {
         let mut events = Events::with_capacity(2048);
         let mut read_buffer = [0; 32768];
 
-        let timeout = Some(Duration::from_millis(5000));
+        let mut timeout = Some(Duration::from_millis(5000));
+
+        if receiver.is_some() {
+            timeout = Some(Duration::from_millis(500));
+        }
 
         loop {
             //check if shutdown signal received
@@ -308,10 +312,14 @@ impl ConnEventHandler {
 
                 if let Some(mut conn) = streams.get_mut(&id) {
                     //check error/hup event received
-                    debug!("Connection closed status:{}", conn.close);
+                    if conn.close {
+                        debug!("Got connect id {} from stream. Connection closed status:{}", id, conn.close);
+                    }
                     close = ConnEventHandler::check_error_event(&conn.get_address(), &event);
                     conn.close = close;
-                    debug!("Connection closed status:{}", close);
+                    if conn.close {
+                        debug!("check_error_event(): Connection closed status:{}", close);
+                    }
                     found = true;
                     if !conn.close {
                         loop {
@@ -383,9 +391,10 @@ impl ConnEventHandler {
                     );
                 } else if !found {
                     if let Some(conn) = self.conns.lock().remove(&id) {
-                        if self.register(id, &conn).is_ok() {
-                            streams.insert(id, conn);
-                        }
+//                        if self.reregister( &conn, id,true).is_ok() {
+//                            streams.insert(id, conn);
+//                        }
+                        streams.insert(id, conn);
                     }
                 }
             }
@@ -447,10 +456,14 @@ impl ConnEventHandler {
 
                 if let Some(mut conn) = streams.get_mut(&id) {
                     //check error/hup event received
-                    debug!("Connection closed status:{}", conn.close);
+                    if conn.close {
+                        debug!("Got connection from stream for id {}. Connection closed status:{}", id, conn.close);
+                    }
                     close = ConnEventHandler::check_error_event(&conn.get_address(), &event);
                     conn.close = close;
-                    debug!("Connection closed status:{}", close);
+                    if conn.close {
+                        debug!("check_error_event:Connection closed status:{}", close);
+                    }
                     found = true;
                     if !conn.close {
                         loop {
@@ -522,9 +535,9 @@ impl ConnEventHandler {
                     );
                 } else if !found {
                     if let Some(conn) = self.conns.lock().remove(&id) {
-                        if self.register(id, &conn).is_ok() {
+                       // if self.reregister( &conn, id, true).is_ok() {
                             streams.insert(id, conn);
-                        }
+                        //}
                     }
                 }
             }
