@@ -284,6 +284,7 @@ impl NetStream {
             }
         }
     }
+    #[inline]
     pub fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.read(buf),
@@ -292,6 +293,7 @@ impl NetStream {
             NetStream::SslTcpStream(ref mut stream) => stream.read(buf),
         }
     }
+    #[inline]
     pub fn write(&mut self, buf: &[u8]) -> IoResult<(usize)> {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.write(buf),
@@ -303,6 +305,7 @@ impl NetStream {
             }
         }
     }
+    #[inline]
     pub fn write_all(&mut self, buf: &[u8]) -> IoResult<()> {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.write_all(buf),

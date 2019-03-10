@@ -83,6 +83,7 @@ impl NetworkServer {
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
         }
+        info!("Shutdown received. Exiting NetworkServer server_loop...");
     }
 
     pub fn run_loop<T>(scope: &Scope, network_server: Arc<NetworkServer>, net_event_handler: Arc<T>, non_blocking:bool)

@@ -169,7 +169,7 @@ impl ConnEventHandler {
         self.sender.send(msg);
         Ok(())
     }*/
-
+    #[inline]
     pub fn register(&self, id: usize, conn: &Conn) -> Result<(), String> {
         debug!("Register connection with id: {}", id);
         if !conn.output.is_empty() {
@@ -186,6 +186,7 @@ impl ConnEventHandler {
 
         Ok(())
     }
+    #[inline]
     fn reregister(&self, conn: &Conn, id: usize, readable_only: bool) -> Result<(), String> {
         debug!("Reregister connection with id: {}", id);
         let flags = if !readable_only {
@@ -227,7 +228,7 @@ impl ConnEventHandler {
             NetStream::SslTcpStream(ref stream) => self.poll.deregister(stream.get_ref()),
         };
     }
-
+    #[inline]
     pub fn check_error_event(addr: &NetAddr, event: &Event) -> bool {
         debug!("check_error_event:event:{:?}", event.readiness());
         let er = UnixReady::from(event.readiness());
