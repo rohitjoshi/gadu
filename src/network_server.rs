@@ -16,7 +16,7 @@ use std::sync::Arc;
 /// NetworkServer
 ///
 pub struct NetworkServer {
-    //config : NetworkServerConfig,
+    conf : NetworkServerConfig,
     server_event_handler: ServerEventHandler,
     conn_handlers: Vec<Arc<ConnEventHandler>>,
     pub shutdown: Arc<AtomicBool>,
@@ -37,12 +37,12 @@ impl NetworkServer {
             ServerEventHandler::new(conf.server_id, conf.num_threads, &conf.server_config)?;
         let mut conn_handlers = Vec::with_capacity(conf.num_threads);
         for i in 0..conf.num_threads {
-            debug!("Initializing NetworkServer::ConnEventHandler {}", i);
+            debug!("Initializing {} NetworkServer::ConnEventHandler {}", conf.server_name, i);
             let handler = ConnEventHandler::new()?;
             conn_handlers.push(Arc::new(handler));
         }
         Ok(NetworkServer {
-            //config : conf.clone(),
+            conf : conf.clone(),
             server_event_handler,
             conn_handlers,
             shutdown,
@@ -83,7 +83,7 @@ impl NetworkServer {
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
         }
-        info!("Shutdown received. Exiting NetworkServer server_loop...");
+        info!("Shutdown received. Exiting {} NetworkServer server_loop...", self.conf.server_name);
     }
 
     pub fn run_loop<T>(scope: &Scope, network_server: Arc<NetworkServer>, net_event_handler: Arc<T>, non_blocking:bool)
@@ -103,6 +103,7 @@ impl NetworkServer {
             scope.spawn(move |_| network_server.server_loop(net_event_handler));
         }else {
             network_server.server_loop(net_event_handler)
+
         }
     }
 }

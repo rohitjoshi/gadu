@@ -30,8 +30,9 @@ pub trait NetEvents {
         &self,
         id: usize,
         conn_tags: &mut HashMap<String, String>,
-        buffer: &mut Vec<u8>,
-    ) -> (Vec<u8>, bool);
+        input_buffer: &mut Vec<u8>,
+        output_buffer: &mut Vec<u8>,
+    ) -> bool;
 }
 
 pub struct ServerEventHandler {
@@ -194,19 +195,21 @@ impl ConnEventHandler {
         } else {
             Ready::readable()
         };
+
+        let poll_opt = PollOpt::empty(); //PollOpt::edge() | PollOpt::oneshot();
         let res = match conn.get_stream() {
             NetStream::UnsecuredTcpStream(ref stream) => {
                 self.poll
-                    .register(stream, Token(id), flags, PollOpt::empty())
+                    .register(stream, Token(id), flags, poll_opt)
             }
             NetStream::UdsStream(ref stream) => {
                 self.poll
-                    .register(stream, Token(id), flags, PollOpt::empty())
+                    .register(stream, Token(id), flags, poll_opt)
             }
             #[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref stream) => {
                 self.poll
-                    .register(stream.get_ref(), Token(id), flags, PollOpt::empty())
+                    .register(stream.get_ref(), Token(id), flags, poll_opt)
             }
         };
         if let Err(e) = res {
@@ -257,13 +260,13 @@ impl ConnEventHandler {
         T: NetEvents + ?Sized,
     {
         let mut streams: HashMap<usize, Conn> = HashMap::new();
-        let mut events = Events::with_capacity(2048);
+        let mut events = Events::with_capacity(1024);
         let mut read_buffer = [0; 32768];
 
-        let mut timeout = Some(Duration::from_millis(5000));
+        let mut timeout = Some(Duration::from_millis(1));
 
         if receiver.is_some() {
-            timeout = Some(Duration::from_millis(500));
+            timeout = Some(Duration::from_millis(1));
         }
 
         loop {
@@ -330,11 +333,12 @@ impl ConnEventHandler {
                             } else if !conn.close {
                                 close = conn.read(&mut read_buffer);
                                 // PROFILER.lock().unwrap().start("/tmp/my-prof.profile").expect("Couldn't start");
-                                let (output, close_conn) =
-                                    event_handler.event_data(id, &mut conn.tags, &mut conn.input);
+                                debug!("Invoking event_handler::event_data for connection id:{}", id);
+                                let close_conn =
+                                    event_handler.event_data(id, &mut conn.tags, &mut conn.input, &mut  conn.output);
                                 // PROFILER.lock().unwrap().stop().expect("Couldn't stop");
-                                debug!("event_data output:{}", String::from_utf8_lossy(&output));
-                                conn.output.extend(&output);
+                                debug!("event_data output:{}", String::from_utf8_lossy(&conn.output));
+                               // conn.output.extend(&output);
                                 conn.close = close_conn;
                             }
                             if !conn.close && !conn.output.is_empty() {
@@ -407,10 +411,10 @@ impl ConnEventHandler {
         T: NetEvents + 'static + Sync + Send + Sized,
     {
         let mut streams: HashMap<usize, Conn> = HashMap::new();
-        let mut events = Events::with_capacity(2048);
+        let mut events = Events::with_capacity(1024);
         let mut read_buffer = [0; 32768];
 
-        let timeout = Some(Duration::from_millis(5000));
+        let timeout = Some(Duration::from_millis(1));
 
         loop {
             //check if shutdown signal received
@@ -474,11 +478,11 @@ impl ConnEventHandler {
                             } else if !conn.close {
                                 close = conn.read(&mut read_buffer);
                                 // PROFILER.lock().unwrap().start("/tmp/my-prof.profile").expect("Couldn't start");
-                                let (output, close_conn) =
-                                    event_handler.event_data(id, &mut conn.tags, &mut conn.input);
+                                let close_conn =
+                                    event_handler.event_data(id, &mut conn.tags, &mut conn.input, &mut conn.output);
                                 // PROFILER.lock().unwrap().stop().expect("Couldn't stop");
-                                debug!("event_data output:{}", String::from_utf8_lossy(&output));
-                                conn.output.extend(&output);
+                                debug!("event_data output:{}", String::from_utf8_lossy(&conn.output));
+                                //conn.output.extend(&output);
                                 conn.close = close_conn;
                             }
                             if !conn.close && !conn.output.is_empty() {

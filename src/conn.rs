@@ -41,8 +41,8 @@ impl Conn {
             addr: net_addr,
             close: false,
             reg_write: false,
-            input: Vec::new(),
-            output: Vec::new(),
+            input: Vec::with_capacity(32768),
+            output: Vec::with_capacity(32768),
             tags: HashMap::with_capacity(2),
         }
     }
@@ -173,9 +173,10 @@ impl Conn {
         match self.stream.write(self.output.as_slice()) {
             Ok(n) => {
                 if n < self.output.len() {
-                    let mut output = Vec::new();
-                    output.extend_from_slice(&self.output[n..self.output.len()]);
-                    self.output = output
+                   // let mut output = Vec::new();
+                   // output.extend_from_slice(&self.output[n..self.output.len()]);
+                   // self.output = output
+                    self.output.drain(0..n);
                 } else {
                     self.output.clear();
                 }
@@ -219,9 +220,10 @@ impl Conn {
                     self.input.extend_from_slice(&packet[0..n]);
                     //self.input.extend(&buffer);
                     debug!(
-                        "Received data: {}. Length:{}",
-                        String::from_utf8_lossy(&self.input),
-                        n
+                        "Received Length:{}, data: {}. ",
+                        n,
+                        String::from_utf8_lossy(&self.input)
+
                     );
                 }
             }

@@ -48,6 +48,13 @@ impl NetListener {
         {
             error!("Failed to set keepalive. Error:{:?}", e);
         }
+
+        if let Err(e) =
+        s.0.set_nodelay(true)
+        {
+            error!("Failed to set nodelay to true. Error:{:?}", e);
+        }
+
         Ok((
             NetStream::UnsecuredTcpStream(s.0),
             NetAddr::NetSocketAddress(s.1),

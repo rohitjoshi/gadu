@@ -13,8 +13,16 @@ publish = false
 travis-ci = { repository = "https://github.com/rohitjoshi/gadu", branch = "master" }
 codecov = { repository = "https://github.com/rohitjoshi/gadu", branch = "master", service = "github" }
 
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+incremental = false
+
+
 [dependencies]
-log="0.4.6"
+log = { version = "0.3", features = ["max_level_trace", "release_max_level_info"] }
 url="1.7.2"
 futures = "0.1.23"
 mio = "0.6"
