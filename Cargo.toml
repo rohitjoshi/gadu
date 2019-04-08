@@ -24,8 +24,8 @@ incremental = false
 [dependencies]
 log = { version = "0.3", features = ["max_level_trace", "release_max_level_info"] }
 url="1.7.2"
-futures = "0.1.23"
-mio = "0.6"
+#futures = "0.1.23"
+mio = "0.6.16"
 mio-uds = "0.6"
 serde = "1.0.27"
 serde_derive = "1.0.27"
@@ -34,13 +34,9 @@ crossbeam-channel = "0.3.2"
 crossbeam = "0.7.1"
 hashbrown = "0.1.8"
 parking_lot = "0.7.1"
+openssl="0.10.20"
 
-[features]
-tls = ["openssl"]
 
-[dependencies.openssl]
-optional = true
-version= "0.10.16"
 
 
 

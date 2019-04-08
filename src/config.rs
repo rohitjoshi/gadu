@@ -9,11 +9,14 @@
 
 use std::fs::File;
 use std::io::prelude::*;
+use std::path::PathBuf;
 use std::str;
 
-#[cfg(feature = "tls")]
+//#[cfg(feature = "tls")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SSLConfig {
+    /// SSL enabled
+    pub enabled: bool,
     /// SSL Protocol
     //pub ssl_protocol : Option<>,
     /// Certificate File
@@ -27,10 +30,12 @@ pub struct SSLConfig {
     /// Verify depth
     pub verify_depth: Option<u32>,
 }
-#[cfg(feature = "tls")]
+
+//#[cfg(feature = "tls")]
 impl Default for SSLConfig {
     fn default() -> SSLConfig {
         SSLConfig {
+            enabled: false,
             certificate_file: None,
             private_key_file: None,
             ca_file: None,
@@ -39,6 +44,7 @@ impl Default for SSLConfig {
         }
     }
 }
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GaduConfig {
     /// The server to connect to.
@@ -49,7 +55,7 @@ pub struct GaduConfig {
     pub write_timeout: usize,
     /// keep alive time
     pub keep_alive_time: u64,
-    #[cfg(feature = "tls")]
+    //#[cfg(feature = "tls")]
     pub ssl_config: SSLConfig,
 }
 
@@ -60,7 +66,7 @@ impl Default for GaduConfig {
             read_timeout: 60_000,
             write_timeout: 60_000,
             keep_alive_time: 60_000,
-            #[cfg(feature = "tls")]
+            //#[cfg(feature = "tls")]
             ssl_config: SSLConfig::default(),
         }
     }

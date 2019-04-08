@@ -9,14 +9,15 @@
 use hashbrown::HashMap;
 use mio::net::TcpStream;
 use mio_uds::UnixStream;
-#[cfg(feature = "tls")]
+use openssl::ssl::{HandshakeError, MidHandshakeSslStream};
+//#[cfg(feature = "tls")]
 use openssl::ssl::SslStream;
+use std::io::{Error, ErrorKind};
+use std::io::{Read, Write};
+use std::io::Result as IoResult;
 use std::net::Shutdown;
 use std::net::SocketAddr;
 use std::os::unix::net::SocketAddr as UnixSocketAddr;
-
-use std::io::Result as IoResult;
-use std::io::{Read, Write};
 use std::time::Duration;
 use url::Url;
 
@@ -46,6 +47,7 @@ impl Conn {
             tags: HashMap::with_capacity(2),
         }
     }
+
 
     #[inline]
     pub fn is_remote_connection(&self) -> bool {
@@ -112,7 +114,7 @@ impl Conn {
                 if let Err(e) = sock.set_keepalive(Some(Conn::KEEP_ALIVE_TIME)) {
                     error!("Faile to set keep alive : {}.", e.to_string());
                 }
-                info!("Tcp client connected with server at {}", addr);
+                debug!("Tcp client connected with server at {}", addr);
                 (
                     NetStream::UnsecuredTcpStream(sock),
                     NetAddr::NetSocketAddress(conn_addr),
@@ -128,7 +130,7 @@ impl Conn {
                         return Err(e.to_string());
                     }
                 };
-                info!("Unix Socket connected with server at {}", path);
+                debug!("Unix Socket connected with server at {}", path);
                 let addr = sock.peer_addr().unwrap();
                 (NetStream::UdsStream(sock), NetAddr::UdsSocketAddress(addr))
             }
@@ -173,9 +175,9 @@ impl Conn {
         match self.stream.write(self.output.as_slice()) {
             Ok(n) => {
                 if n < self.output.len() {
-                   // let mut output = Vec::new();
-                   // output.extend_from_slice(&self.output[n..self.output.len()]);
-                   // self.output = output
+                    // let mut output = Vec::new();
+                    // output.extend_from_slice(&self.output[n..self.output.len()]);
+                    // self.output = output
                     self.output.drain(0..n);
                 } else {
                     self.output.clear();
@@ -183,7 +185,7 @@ impl Conn {
             }
             Err(ref e) => {
                 if e.kind() == std::io::ErrorKind::WouldBlock {
-                    warn!(
+                    debug!(
                         "Write: ErrorKind::WouldBlock on connection :{}",
                         self.addr.to_string()
                     );
@@ -215,7 +217,7 @@ impl Conn {
                 debug!("Conn bytes read: {}", n);
                 if n == 0 {
                     self.close = true;
-                //break;
+                    //break;
                 } else {
                     self.input.extend_from_slice(&packet[0..n]);
                     //self.input.extend(&buffer);
@@ -223,21 +225,20 @@ impl Conn {
                         "Received Length:{}, data: {}. ",
                         n,
                         String::from_utf8_lossy(&self.input)
-
                     );
                 }
             }
             Err(ref e) => {
                 if e.kind() == std::io::ErrorKind::WouldBlock {
-                    warn!(
+                    debug!(
                         "Read: ErrorKind::WouldBlock on connection :{}",
                         self.addr.to_string()
                     );
-                //break;
+                    //break;
                 } else if e.kind() == std::io::ErrorKind::ConnectionReset {
                     info!("Read: Connection reset by peer:{}", self.addr.to_string());
                     self.close = true;
-                //break;
+                    //break;
                 } else {
                     error!(
                         "Read: Peer Connection:{}, Read Error: {:?}",
@@ -260,6 +261,56 @@ impl Conn {
     pub fn shutdown(&mut self) {
         let _ = self.stream.shutdown();
     }
+
+    pub fn is_ssl_handshake_pending(&self) -> bool {
+        match self.stream {
+            NetStream::SslMidHandshakeStream(_) => {
+                true
+            }
+            _ => { false }
+        }
+    }
+
+
+    pub fn ssl_handshake(&mut self) -> Result<(), Error> {
+        use std::mem;
+        let old = mem::replace(&mut self.stream, NetStream::Invalid);
+        match old {
+            NetStream::SslMidHandshakeStream(mid_stream) => {
+                match mid_stream.handshake() {
+                    Ok(s) => {
+                        debug!("ssl_handshake:SSL Handshake successful");
+                        self.stream = NetStream::SslTcpStream(s);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        debug!("{:?}", e);
+                        let err_str = e.to_string();
+                        match e {
+                            HandshakeError::WouldBlock(s) => {
+                                debug!("Failed to handshake on SSL connection. Error:{}", err_str);
+                                self.stream = NetStream::SslMidHandshakeStream(s);
+                                Ok(())
+                            }
+                            _ => {
+                                error!("Failed to accept SSL connection. Error:{}", err_str);
+                                Err(Error::new(
+                                    ErrorKind::Other,
+                                    format!("An SSL error occurred.{}", err_str),
+                                ))
+                            }
+                        }
+                    }
+                }
+            }
+            _ => { Ok(()) }
+        }
+    }
+    /* if let Ok(_) = NetStream::ssl_handshake(&mut self.stream) {
+                //self.stream = stream;
+            }else {
+                self.close = true;
+            }*/
 }
 
 #[derive(Debug)]
@@ -270,8 +321,12 @@ pub enum NetStream {
     UdsStream(UnixStream),
     /// An SSL-secured TcpStream.
     /// This is only available when compiled with SSL support.
-    #[cfg(feature = "tls")]
+    //#[cfg(feature = "tls")]
     SslTcpStream(SslStream<TcpStream>),
+    //SSL mid handshake stream
+    SslMidHandshakeStream(MidHandshakeSslStream<TcpStream>),
+
+    Invalid,
 }
 
 impl NetStream {
@@ -279,11 +334,17 @@ impl NetStream {
         match *self {
             NetStream::UnsecuredTcpStream(ref stream) => stream.shutdown(Shutdown::Both),
             NetStream::UdsStream(ref stream) => stream.shutdown(Shutdown::Both),
-            #[cfg(feature = "tls")]
+            //#[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref mut stream) => {
-                stream.shutdown();
+                if let Err(e) = stream.shutdown() {
+                    warn!("Failed to shutdown SSL stream. Error:{:?}",e);
+                }
                 Ok(())
             }
+            NetStream::SslMidHandshakeStream(ref mut mid_stream) => {
+                mid_stream.get_mut().shutdown(Shutdown::Both)
+            }
+            NetStream::Invalid => { Ok(()) }
         }
     }
     #[inline]
@@ -291,8 +352,12 @@ impl NetStream {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.read(buf),
             NetStream::UdsStream(ref mut stream) => stream.read(buf),
-            #[cfg(feature = "tls")]
+            //#[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref mut stream) => stream.read(buf),
+            NetStream::SslMidHandshakeStream(ref mut mid_stream) => {
+                mid_stream.get_mut().read(buf)
+            }
+            NetStream::Invalid => { Ok(0) }
         }
     }
     #[inline]
@@ -300,11 +365,15 @@ impl NetStream {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.write(buf),
             NetStream::UdsStream(ref mut stream) => stream.write(buf),
-            #[cfg(feature = "tls")]
+            //#[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref mut stream) => {
                 // Arc::get_mut(stream).unwrap().write(buf)
                 stream.write(buf)
             }
+            NetStream::SslMidHandshakeStream(ref mut mid_stream) => {
+                mid_stream.get_mut().write(buf)
+            }
+            NetStream::Invalid => { Ok(0) }
         }
     }
     #[inline]
@@ -312,18 +381,66 @@ impl NetStream {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.write_all(buf),
             NetStream::UdsStream(ref mut stream) => stream.write_all(buf),
-            #[cfg(feature = "tls")]
+            //#[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref mut stream) => stream.write_all(buf),
+            NetStream::SslMidHandshakeStream(ref mut mid_stream) => {
+                mid_stream.get_mut().write_all(buf)
+            }
+            NetStream::Invalid => { Ok(()) }
         }
     }
     pub fn flush(&mut self) -> IoResult<()> {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.flush(),
             NetStream::UdsStream(ref mut stream) => stream.flush(),
-            #[cfg(feature = "tls")]
+            //#[cfg(feature = "tls")]
             NetStream::SslTcpStream(ref mut stream) => stream.flush(),
+            NetStream::SslMidHandshakeStream(ref mut mid_stream) => {
+                mid_stream.get_mut().flush()
+            }
+            NetStream::Invalid => { Ok(()) }
         }
     }
+
+    /*pub fn ssl_handshake(stream : &mut NetStream)  -> Result<(), Error> {
+        match *stream {
+            NetStream::SslMidHandshakeStream(mut mid_stream) => {
+                match mid_stream.handshake() {
+                    Ok(s) => {
+                        info!("ssl_handshake:SSL Handshake successful");
+                        *stream = NetStream::SslTcpStream(s);
+                        Ok(())
+                    },
+                    Err(e) => {
+                        info!("{:?}", e);
+                        let err_str = e.to_string();
+                        match e {
+                            HandshakeError::WouldBlock(s) => {
+                                info!("Failed to handshake on SSL connection. Error:{}", err_str);
+                                *stream = NetStream::SslMidHandshakeStream(s);
+                                Ok(())
+                            },
+                            _ => {
+                                error!("Failed to accept SSL connection. Error:{}", err_str);
+                                return Err(Error::new(
+                                    ErrorKind::Other,
+                                    format!("An SSL error occurred.{}", err_str),
+                                ));
+                            }
+                        }
+                    }
+                }
+            },
+            _ => {
+                error!("Invalid operation. SSL Handshake is only supported on SslMidHandshakeStream");
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    "An SSL error occurred.Invalid operation. SSL Handshake is only supported on SslMidHandshakeStream",
+                ));
+            }
+
+        }
+    }*/
 }
 
 #[derive(Debug)]
