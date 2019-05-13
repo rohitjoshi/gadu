@@ -20,6 +20,8 @@ use std::net::SocketAddr;
 use std::os::unix::net::SocketAddr as UnixSocketAddr;
 use std::time::Duration;
 use url::Url;
+use crate::config::SSLConfig;
+use crate::server::Server;
 
 pub struct Conn {
     url: String,
@@ -30,6 +32,7 @@ pub struct Conn {
     pub close: bool,
     pub reg_write: bool,
     pub tags: HashMap<String, String>,
+    pub server_ssl_config: Option<SSLConfig>
 }
 
 impl Conn {
@@ -45,6 +48,7 @@ impl Conn {
             input: Vec::with_capacity(32768),
             output: Vec::with_capacity(32768),
             tags: HashMap::with_capacity(2),
+            server_ssl_config: None
         }
     }
 
@@ -280,6 +284,16 @@ impl Conn {
                 match mid_stream.handshake() {
                     Ok(s) => {
                         debug!("ssl_handshake:SSL Handshake successful");
+                        if self.server_ssl_config.is_some() {
+                            debug!("ssl_handshake:Validate client CN");
+                            if let Err(e) = Server::validate_ssl_connection(self.server_ssl_config.as_ref().unwrap(), s.ssl()) {
+                                error!("Failed to accept SSL connection. Error:{:?}", e);
+                                return Err(Error::new(
+                                    ErrorKind::Other,
+                                    format!("An SSL error occurred.{}", e.to_string()),
+                                ));
+                            };
+                        }
                         self.stream = NetStream::SslTcpStream(s);
                         Ok(())
                     }

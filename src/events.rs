@@ -249,115 +249,10 @@ impl ConnEventHandler {
                 continue;
             }
 
-            debug!("Child Poll: Total events received:{}", total_events);
+            debug!("Child Poll id: {}: Total events received:{}, Number of connections:{}", self.id, total_events, streams.len());
 
-            for event in &events {
-                let token = event.token();
+            //self.process_events(&mut events, &event_handler, &mut streams, &mut read_buffer);
 
-                debug!("Child loop event :{:?}", event);
-
-                let id = token.0;
-                let mut close = false;
-                let mut found = false;
-
-                if let Some(mut conn) = streams.get_mut(&id) {
-                    //check error/hup event received
-                    if conn.close {
-                        debug!("Got connect id {} from stream. Connection closed status:{}", id, conn.close);
-                    }
-                    close = ConnEventHandler::check_error_event(&conn.get_address(), &event);
-                    conn.close = close;
-                    if conn.close {
-                        debug!("check_error_event(): Connection closed status:{}", close);
-                    }
-
-                    found = true;
-                    if !conn.close {
-                        // check if SSL handshake was still pending
-                        if conn.is_ssl_handshake_pending() {
-                            if let Err(e) = conn.ssl_handshake() {
-                                warn!("SSL Handshake failed. Error:{:?}",e);
-                            }
-                            continue;
-                        } else {
-                            loop {
-                                debug!("output len:{}", conn.output.len());
-                                if !conn.output.is_empty() {
-                                    close = conn.write();
-                                } else if !conn.close {
-                                    close = conn.read(&mut read_buffer);
-                                    // PROFILER.lock().unwrap().start("/tmp/my-prof.profile").expect("Couldn't start");
-                                    debug!("Invoking event_handler::event_data for connection id:{}", id);
-                                    let close_conn =
-                                        event_handler.event_data(id, &mut conn.tags, &mut conn.input, &mut conn.output);
-                                    // PROFILER.lock().unwrap().stop().expect("Couldn't stop");
-                                    debug!("event_data output:{}", String::from_utf8_lossy(&conn.output));
-                                    // conn.output.extend(&output);
-                                    conn.close = close_conn;
-                                }
-                                if !conn.close && !conn.output.is_empty() {
-                                    continue;
-                                }
-
-                                break;
-                            }
-                        }
-                    }
-                    if !conn.output.is_empty() {
-                        debug!("Reregistering child sock for read and write");
-                        if !conn.reg_write {
-                            conn.reg_write = true;
-                            if let Err(e) = self.reregister(&conn, id, false) {
-                                error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
-                            }
-                        }
-                    } else {
-                        debug!("Reregistering child sock for read only");
-                        if conn.reg_write {
-                            conn.reg_write = false;
-                            if let Err(e) = self.reregister(&conn, id, true) {
-                                error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
-                            }
-                        }
-                        if !close {
-                            close = conn.close
-                        }
-                    }
-                    if close {
-                        debug!("Socket is closed.. shutting down");
-                        conn.shutdown();
-                        self.deregister(id, &conn);
-                        if let Ok(true) = event_handler.event_closed(id, &mut conn) {
-                            if self.register(id, &conn).is_ok() {
-                                info!("Auto reconnect successful. Reregistering socket");
-                                conn.reg_write = false;
-                                if let Err(e) = self.reregister(&conn, id, true) {
-                                    error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
-                                }
-                                close = false;
-                            }
-                        }
-                        if close {
-                            self.conns.lock().remove(&id);
-                        }
-                    }
-                }
-                if close {
-                    streams.remove(&id);
-                    debug!(
-                        "Number of registered connections :{}, Number of new connection: {}",
-                        streams.len(),
-                        self.conns.lock().len()
-                    );
-                } else if !found {
-                    if let Some(conn) = self.conns.lock().remove(&id) {
-//                        if self.reregister( &conn, id,true).is_ok() {
-//                            streams.insert(id, conn);
-//                        }
-                        streams.insert(id, conn);
-                    }
-                }
-            }
         }
     }
 
@@ -397,110 +292,182 @@ impl ConnEventHandler {
 
             debug!("Child Poll id: {}: Total events received:{}, Number of connections:{}", self.id, total_events, streams.len());
 
-            for event in &events {
-                let token = event.token();
+            self.process_events(&mut events, &event_handler, &mut streams, &mut read_buffer);
 
-                debug!("Child loop event :{:?}", event);
+        }
+    }
 
-                let id = token.0;
-                let mut close = false;
-                let mut found = false;
 
-                if let Some(mut conn) = streams.get_mut(&id) {
-                    //check error/hup event received
-                    if conn.close {
-                        debug!("Got connection from stream for id {}. Connection closed status:{}", id, conn.close);
-                    } else {
-                        close = ConnEventHandler::check_error_event(&conn.get_address(), &event);
-                    }
-                    conn.close = close;
-                    if conn.close {
-                        debug!("check_error_event:Connection closed status:{}", close);
-                    }
-                    found = true;
+    fn process_events<T>(&self, events : &mut Events, event_handler: &Arc<T>, streams: &mut HashMap<usize, Conn>, mut read_buffer: &mut[u8])
+    where T: NetEvents + 'static + Sync + Send + Sized
+    {
+        for event in events.iter() {
+            let token = event.token();
 
-                    if !conn.close {
-                        // check if SSL handshake was still pending
-                        if conn.is_ssl_handshake_pending() {
-                            if let Err(e) = conn.ssl_handshake() {
-                                warn!("SSL Handshake failed. Error:{:?}",e);
-                            }
-                        } else {
-                            //perform read/write operations
-                            loop {
-                                debug!("output len:{}", conn.output.len());
-                                if !conn.output.is_empty() {
-                                    close = conn.write();
-                                } else if !conn.close {
-                                    close = conn.read(&mut read_buffer);
-                                    let close_conn =
-                                        event_handler.event_data(id, &mut conn.tags, &mut conn.input, &mut conn.output);
-                                    debug!("event_data output:{}", String::from_utf8_lossy(&conn.output));
-                                    //conn.output.extend(&output);
-                                    conn.close = close_conn;
-                                }
-                                if !conn.close && !conn.output.is_empty() {
-                                    continue;
-                                }
+            debug!("Child loop event :{:?}", event);
 
-                                break;
-                            }
-                        }
-                    }
-                    if !conn.output.is_empty() {
-                        debug!("Reregistering child sock for read and write");
-                        if !conn.reg_write {
-                            conn.reg_write = true;
-                            if let Err(e) = self.reregister(&conn, id, false) {
-                                error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
-                            }
+            let id = token.0;
+            let mut close = false;
+            let mut found = false;
+
+            if let Some(mut conn) = streams.get_mut(&id) {
+                //check error/hup event received
+                if conn.close {
+                    debug!("Got connection from stream for id {}. Connection closed status:{}", id, conn.close);
+                } else {
+                    close = ConnEventHandler::check_error_event(&conn.get_address(), &event);
+                }
+                conn.close = close;
+                if conn.close {
+                    debug!("check_error_event:Connection closed status:{}", close);
+                }
+                found = true;
+
+                if !conn.close {
+                    // check if SSL handshake was still pending
+                    if conn.is_ssl_handshake_pending() {
+                        if let Err(e) = conn.ssl_handshake() {
+                            warn!("SSL Handshake failed. Error:{:?}",e);
                         }
                     } else {
-                        debug!("Reregistering child sock for read only");
-                        if conn.reg_write {
-                            conn.reg_write = false;
-                            if let Err(e) = self.reregister(&conn, id, true) {
-                                error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
-                            }
-                        }
-                        if !close {
-                            close = conn.close
+
+                        close = self.handle_event2(id, &mut conn, &mut read_buffer, &event_handler);
+
+                    }
+                }
+                if !conn.output.is_empty() {
+                    debug!("Reregistering child sock for read and write");
+                    if !conn.reg_write {
+                        conn.reg_write = true;
+                        if let Err(e) = self.reregister(&conn, id, false) {
+                            error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
                         }
                     }
-                    if close {
-                        debug!("Socket is closed.. shutting down");
-                        conn.shutdown();
-                        self.deregister(id, &conn);
-                        if let Ok(true) = event_handler.event_closed(id, &mut conn) {
-                            if self.register(id, &conn).is_ok() {
-                                debug!("Auto reconnect successful. Reregistering socket");
-                                conn.reg_write = false;
-                                if let Err(e) = self.reregister(&conn, id, true) {
-                                    error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
-                                }
-                                close = false;
-                            }
+                } else {
+                    debug!("Reregistering child sock for read only");
+                    if conn.reg_write {
+                        conn.reg_write = false;
+                        if let Err(e) = self.reregister(&conn, id, true) {
+                            error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
                         }
-                        if close {
-                            self.conns.lock().remove(&id);
-                        }
+                    }
+                    if !close {
+                        close = conn.close
                     }
                 }
                 if close {
-                    streams.remove(&id);
-                    debug!(
-                        "Number of registered connections :{}, Number of new connection: {}",
-                        streams.len(),
-                        self.conns.lock().len()
-                    );
-                } else if !found {
-                    if let Some(conn) = self.conns.lock().remove(&id) {
-                        // if self.reregister( &conn, id, true).is_ok() {
-                        streams.insert(id, conn);
-                        //}
-                    }
+                    close = self.close_connection2(id, conn, event_handler);
+                }
+            }
+            if close {
+                streams.remove(&id);
+                debug!(
+                    "Number of registered connections :{}, Number of new connection: {}",
+                    streams.len(),
+                    self.conns.lock().len()
+                );
+            } else if !found {
+                if let Some(conn) = self.conns.lock().remove(&id) {
+                    // if self.reregister( &conn, id, true).is_ok() {
+                    streams.insert(id, conn);
+                    //}
                 }
             }
         }
+
+    }
+
+    ///
+    /// close connection and deregister
+    fn close_connection2<T>(&self, id: usize, mut conn: &mut Conn, event_handler: &Arc<T>) -> bool
+        where T: NetEvents + 'static + Sync + Send + Sized{
+        debug!("Socket is closed.. shutting down");
+        let mut close = true;
+        conn.shutdown();
+        self.deregister(id, &conn);
+        if let Ok(true) = event_handler.event_closed(id, &mut conn) {
+            if self.register(id, &conn).is_ok() {
+                info!("Auto reconnect successful. Reregistering socket");
+                conn.reg_write = false;
+                if let Err(e) = self.reregister(&conn, id, true) {
+                    error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
+                }
+                close = false;
+            }
+        }
+        if close {
+            self.conns.lock().remove(&id);
+        }
+        close
+    }
+
+    fn close_connection<T>(&self, id: usize, mut conn: &mut Conn, event_handler: &T) -> bool
+        where T: NetEvents + 'static + Sync + Send + Sized{
+        debug!("Socket is closed.. shutting down");
+        let mut close = true;
+        conn.shutdown();
+        self.deregister(id, &conn);
+        if let Ok(true) = event_handler.event_closed(id, &mut conn) {
+            if self.register(id, &conn).is_ok() {
+                info!("Auto reconnect successful. Reregistering socket");
+                conn.reg_write = false;
+                if let Err(e) = self.reregister(&conn, id, true) {
+                    error!("Failed to reregister. Error:{:?}", e); //FIXME: should this be closed
+                }
+                close = false;
+            }
+        }
+        if close {
+            self.conns.lock().remove(&id);
+        }
+        close
+    }
+
+    fn handle_event<T>(&self, id:usize, mut conn: &mut Conn, mut read_buffer: &mut [u8], event_handler: &T) -> bool
+        where T: NetEvents + 'static + Sync + Send + Sized{
+        let mut close = false;
+        loop {
+            debug!("output len:{}", conn.output.len());
+            if !conn.output.is_empty() {
+                close = conn.write();
+            } else if !conn.close {
+                close = conn.read(&mut read_buffer);
+                let close_conn =
+                    event_handler.event_data(id, &mut conn.tags, &mut conn.input, &mut conn.output);
+                debug!("event_data output:{}", String::from_utf8_lossy(&conn.output));
+                //conn.output.extend(&output);
+                conn.close = close_conn;
+            }
+            if !conn.close && !conn.output.is_empty() {
+                continue;
+            }
+
+            break;
+        }
+        close
+    }
+
+    fn handle_event2<T>(&self, id:usize, mut conn: &mut Conn, mut read_buffer: &mut [u8], event_handler: &Arc<T>) -> bool
+        where T: NetEvents + 'static + Sync + Send + Sized{
+        let mut close = false;
+        loop {
+            debug!("output len:{}", conn.output.len());
+            if !conn.output.is_empty() {
+                close = conn.write();
+            } else if !conn.close {
+                close = conn.read(&mut read_buffer);
+                let close_conn =
+                    event_handler.event_data(id, &mut conn.tags, &mut conn.input, &mut conn.output);
+                debug!("event_data output:{}", String::from_utf8_lossy(&conn.output));
+                //conn.output.extend(&output);
+                conn.close = close_conn;
+            }
+            if !conn.close && !conn.output.is_empty() {
+                continue;
+            }
+
+            break;
+        }
+        close
     }
 }

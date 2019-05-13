@@ -29,6 +29,8 @@ pub struct SSLConfig {
     pub verify: Option<bool>,
     /// Verify depth
     pub verify_depth: Option<u32>,
+    /// Valid CNs
+    pub valid_cns : Option<Vec<String>>
 }
 
 //#[cfg(feature = "tls")]
@@ -41,6 +43,7 @@ impl Default for SSLConfig {
             ca_file: None,
             verify: None,
             verify_depth: None,
+            valid_cns : None,
         }
     }
 }

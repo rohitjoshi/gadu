@@ -15,7 +15,7 @@ use mio_uds::UnixListener;
 use openssl::error::ErrorStack;
 //#[cfg(feature = "tls")]
 use openssl::ssl::{
-    HandshakeError, SslAcceptor, SslFiletype, SslMethod, SslMode, SslVerifyMode, SslVersion,
+    HandshakeError, SslAcceptor, SslFiletype, SslMethod, SslMode, SslVerifyMode, SslRef
 };
 //#[cfg(feature = "tls")]
 
@@ -27,7 +27,7 @@ use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 use url::Url;
 
-use crate::config::GaduConfig;
+use crate::config::{GaduConfig, SSLConfig};
 use crate::conn::{Conn, NetAddr, NetStream};
 
 
@@ -172,7 +172,11 @@ impl Server {
                         self.accept_uds_connection(&listener)?
                     }
                 };
-                conns.push(Conn::new(net_stream, net_addr));
+                let mut conn = Conn::new(net_stream, net_addr);
+                if self.config.ssl_config.enabled {
+                    conn.server_ssl_config = Some(self.config.ssl_config.clone());
+                }
+                conns.push(conn);
             }
 //            }else {
 //                // these are uncompleted SSL handshake or others...
@@ -216,14 +220,17 @@ impl Server {
 
             //ctx.clear_options(SslOptions::NO_TLSV1_3);
 
-            ctx.set_min_proto_version(Some(SslVersion::TLS1_2))?;
+            //ctx.set_min_proto_version(Some(SslVersion::TLS1_2))?;
 
             ctx.set_mode(SslMode::AUTO_RETRY);
 
             // verify peer
             if config.ssl_config.verify.unwrap_or(false) {
-                ctx.set_verify(SslVerifyMode::PEER);
+                debug!("Set Verify : PEER");
+                //ctx.set_verify(SslVerifyMode::PEER); //must be cert signed by CA
+                ctx.set_verify_callback(openssl::ssl::SslVerifyMode::PEER, |_, _| true); //support self signed
             } else {
+                debug!("Set Verify : NONE");
                 ctx.set_verify(SslVerifyMode::NONE);
             }
             // verify depth
@@ -334,6 +341,53 @@ impl Server {
     }
 
 
+    pub fn validate_ssl_connection(ssl_config: &SSLConfig, ssl: &SslRef) -> Result<(),String> {
+        debug!("validate_ssl_connection for CN");
+        // if verify is falls, return
+        /*if !ssl_config.verify.unwrap_or(false) {
+            return Ok(());
+        }*/
+
+        fn get_friendly_name(peer: &openssl::x509::X509) -> String {
+            peer.subject_name() // can't figure out how to get the real friendly name
+                .entries_by_nid(openssl::nid::Nid::COMMONNAME)
+                //.last()
+                .map(|it| {
+                    format!("{}={}", it.object().nid().short_name().unwrap_or(&"".to_string()), it.data()
+                        .as_utf8()
+                        .and_then(|s| Ok(s.to_string()))
+                        .unwrap_or("".to_string()))
+                }).collect()
+                //.unwrap_or("".to_string())
+        }
+
+        match ssl.peer_certificate() {
+            None => {
+                return Err("ERR No certificate was provided\r\n".to_string());
+            },
+            Some(peer) => {
+                let client_cn = get_friendly_name(&peer);
+                if client_cn.is_empty() {
+                    return Err("ERR No certificate was provided\r\n".to_string());
+                }
+                debug!("Connection with SSL CN :{} received", client_cn);
+                // if CN not populated, return success
+                if ssl_config.valid_cns.is_none() {
+                    debug!("No list of CN defined");
+                    return Ok(());
+                }else if ssl_config.valid_cns.as_ref().unwrap().contains(&client_cn) {
+                    info!("Client with SSL CN: {} is authenticated successfully", client_cn);
+                } else {
+                    warn!("Client with SSL CN: {} authentication failed.", client_cn);
+                    return Err(format!("ERR Client SSL Authentication failed for CN: {} \r\n", client_cn));
+                }
+
+            }
+        }
+        Ok(())
+    }
+
+
     // #[cfg(feature = "tls")]
     pub fn accept_ssl_connection(&self,
                                  listener: &TcpListener,
@@ -357,7 +411,14 @@ impl Server {
 
         match self.acceptor.as_ref().unwrap().accept(sock) {
             Ok(s) => {
-                debug!("SSL Handshake successful");
+                debug!("SSL Handshake successful. Validating connection..");
+                if let Err(e) = Server::validate_ssl_connection(&self.config.ssl_config, s.ssl()) {
+                    error!("Failed to accept SSL connection. Error:{:?}", e);
+                    return Err(Error::new(
+                        ErrorKind::Other,
+                        format!("An SSL error occurred.{}", e.to_string()),
+                    ));
+                };
                 Ok((
                     NetStream::SslTcpStream(s),
                     NetAddr::NetSocketAddress(addr)
@@ -369,6 +430,13 @@ impl Server {
                 match e {
                     HandshakeError::WouldBlock(s) => {
                         debug!("Failed to handshake on SSL connection. Received error: HandshakeError::WouldBlock");
+//                        if let Err(e) = self.validate_ssl_connection(s.ssl()) {
+//                            error!("Failed to accept SSL connection. Error:{:?}", e);
+//                            return Err(Error::new(
+//                                ErrorKind::Other,
+//                                format!("An SSL error occurred.{}", e.to_string()),
+//                            ));
+//                        };
                         Ok((
                             NetStream::SslMidHandshakeStream(s),
                             NetAddr::NetSocketAddress(addr)
