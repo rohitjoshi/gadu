@@ -348,6 +348,12 @@ impl Server {
             return Ok(());
         }*/
 
+        if ssl_config.valid_cns.is_none() || ssl_config.valid_cns.as_ref().unwrap().is_empty() {
+            debug!("No list of CN defined to verify");
+            return Ok(());
+        }
+
+
         fn get_friendly_name(peer: &openssl::x509::X509) -> String {
             peer.subject_name() // can't figure out how to get the real friendly name
                 .entries_by_nid(openssl::nid::Nid::COMMONNAME)
@@ -361,6 +367,8 @@ impl Server {
                 //.unwrap_or("".to_string())
         }
 
+
+
         match ssl.peer_certificate() {
             None => {
                 return Err("ERR No certificate was provided\r\n".to_string());
@@ -368,14 +376,11 @@ impl Server {
             Some(peer) => {
                 let client_cn = get_friendly_name(&peer);
                 if client_cn.is_empty() {
-                    return Err("ERR No certificate was provided\r\n".to_string());
+                    return Err("ERR No certificate name was provided\r\n".to_string());
                 }
                 debug!("Connection with SSL CN :{} received", client_cn);
                 // if CN not populated, return success
-                if ssl_config.valid_cns.is_none() {
-                    debug!("No list of CN defined");
-                    return Ok(());
-                }else if ssl_config.valid_cns.as_ref().unwrap().contains(&client_cn) {
+                if ssl_config.valid_cns.as_ref().unwrap().contains(&client_cn) {
                     info!("Client with SSL CN: {} is authenticated successfully", client_cn);
                 } else {
                     warn!("Client with SSL CN: {} authentication failed.", client_cn);
