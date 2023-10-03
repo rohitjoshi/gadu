@@ -65,7 +65,7 @@ impl NetworkServer {
         }
     }
 
-    fn server_loop(&self, net_event_handler: Arc<NetEvents>) {
+    fn server_loop(&self, net_event_handler: Arc<dyn NetEvents>) {
         let mut id = self.server_event_handler.server_id;
         info!("Waiting for connection...");
         while !self.shutdown.load(Ordering::SeqCst) {

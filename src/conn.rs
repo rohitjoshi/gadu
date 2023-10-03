@@ -187,24 +187,22 @@ impl Conn {
                     self.output.clear();
                 }
             }
-            Err(ref e) => {
-                if e.kind() == std::io::ErrorKind::WouldBlock {
-                    debug!(
-                        "Write: ErrorKind::WouldBlock on connection :{}",
-                        self.addr.to_string()
-                    );
-                } else if e.kind() == std::io::ErrorKind::ConnectionReset {
-                    info!("Write: Connection reset by peer:{}", self.addr.to_string());
-                    self.close = true;
-                } else {
-                    error!(
-                        "Write: Peer Connection:{}, Write Error: {:?}",
-                        self.addr.to_string(),
-                        e
-                    );
-                    self.close = true;
-                }
-            }
+            Err(ref e) => if e.kind() == ErrorKind::WouldBlock {
+                debug!(
+                    "Write: ErrorKind::WouldBlock on connection :{}",
+                    self.addr.to_string()
+                );
+            } else if e.kind() == ErrorKind::ConnectionReset {
+                info!("Write: Connection reset by peer:{}", self.addr.to_string());
+                self.close = true;
+            } else {
+                error!(
+                    "Write: Peer Connection:{}, Write Error: {:?}",
+                    self.addr.to_string(),
+                    e
+                );
+                self.close = true;
+            },
         }
         self.close // close is false
     }
@@ -232,27 +230,25 @@ impl Conn {
                     );
                 }
             }
-            Err(ref e) => {
-                if e.kind() == std::io::ErrorKind::WouldBlock {
-                    debug!(
-                        "Read: ErrorKind::WouldBlock on connection :{}",
-                        self.addr.to_string()
-                    );
-                    //break;
-                } else if e.kind() == std::io::ErrorKind::ConnectionReset {
-                    info!("Read: Connection reset by peer:{}", self.addr.to_string());
-                    self.close = true;
-                    //break;
-                } else {
-                    error!(
-                        "Read: Peer Connection:{}, Read Error: {:?}",
-                        self.addr.to_string(),
-                        e
-                    );
-                    self.close = true;
-                    //break;
-                }
-            } /* Err(_) => {
+            Err(ref e) => if e.kind() == ErrorKind::WouldBlock {
+                debug!(
+                    "Read: ErrorKind::WouldBlock on connection :{}",
+                    self.addr.to_string()
+                );
+                //break;
+            } else if e.kind() == ErrorKind::ConnectionReset {
+                info!("Read: Connection reset by peer:{}", self.addr.to_string());
+                self.close = true;
+                //break;
+            } else {
+                error!(
+                    "Read: Peer Connection:{}, Read Error: {:?}",
+                    self.addr.to_string(),
+                    e
+                );
+                self.close = true;
+                //break;
+            }, /* Err(_) => {
                   error!("Peer Connection:{}, Read Error: Unknown", self.addr);
                   self.close = true;
                   //break;
@@ -344,7 +340,7 @@ pub enum NetStream {
 }
 
 impl NetStream {
-    pub fn shutdown(&mut self) -> Result<(), std::io::Error> {
+    pub fn shutdown(&mut self) -> Result<(), Error> {
         match *self {
             NetStream::UnsecuredTcpStream(ref stream) => stream.shutdown(Shutdown::Both),
             NetStream::UdsStream(ref stream) => stream.shutdown(Shutdown::Both),
@@ -375,7 +371,7 @@ impl NetStream {
         }
     }
     #[inline]
-    pub fn write(&mut self, buf: &[u8]) -> IoResult<(usize)> {
+    pub fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
         match *self {
             NetStream::UnsecuredTcpStream(ref mut stream) => stream.write(buf),
             NetStream::UdsStream(ref mut stream) => stream.write(buf),
@@ -466,7 +462,7 @@ pub enum NetAddr {
     UdsSocketAddress(UnixSocketAddr),
 }
 
-impl std::string::ToString for NetAddr {
+impl ToString for NetAddr {
     fn to_string(&self) -> String {
         match *self {
             NetAddr::NetSocketAddress(ref addr) => format!("{:?}", addr).to_owned(),

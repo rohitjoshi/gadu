@@ -80,7 +80,7 @@ impl ConnEventHandler {
     pub fn new(id: usize) -> Result<ConnEventHandler, String> {
         let res = Poll::new();
         if let Err(e) = res {
-            return { Err(e.to_string()) };
+            return Err(e.to_string()) ;
         }
         //let (sender, receiver) = mpsc::unbounded::<ConnMsg>();
         let conn_handler = ConnEventHandler {
@@ -201,7 +201,7 @@ impl ConnEventHandler {
 
     pub fn child_loop_new<T>(
         &self,
-        event_handler: &T,
+        _event_handler: &T,
         receiver: Option<mpsc::Receiver<ConnMsg>>,
         shutdown: Arc<AtomicBool>,
     ) where
@@ -210,7 +210,7 @@ impl ConnEventHandler {
         info!("Child Loop with receiver started for ConnectionHandler :{}", self.id);
         let mut streams: HashMap<usize, Conn> = HashMap::new();
         let mut events = Events::with_capacity(1024);
-        let mut read_buffer = [0; 32768];
+        //let mut read_buffer = [0; 32768];
 
 
         let timeout = if receiver.is_some() { Some(Duration::from_millis(100)) } else { Some(Duration::from_millis(250)) };
@@ -230,7 +230,7 @@ impl ConnEventHandler {
                 //let r = receiver.unwrap();
                 let data: Vec<ConnMsg> = receiver.as_ref().unwrap().try_iter().collect();
                 for msg in data.iter() {
-                    if let Some(mut conn) = streams.get_mut(&msg.id) {
+                    if let Some(conn) = streams.get_mut(&msg.id) {
                         conn.output.extend(&msg.output);
                         conn.reg_write = true;
                     }
@@ -423,7 +423,7 @@ impl ConnEventHandler {
         close
     }
 
-    fn handle_event<T>(&self, id:usize, mut conn: &mut Conn, mut read_buffer: &mut [u8], event_handler: &T) -> bool
+    fn handle_event<T>(&self, id:usize, conn: &mut Conn, mut read_buffer: &mut [u8], event_handler: &T) -> bool
         where T: NetEvents + 'static + Sync + Send + Sized{
         let mut close = false;
         loop {
@@ -447,7 +447,7 @@ impl ConnEventHandler {
         close
     }
 
-    fn handle_event2<T>(&self, id:usize, mut conn: &mut Conn, mut read_buffer: &mut [u8], event_handler: &Arc<T>) -> bool
+    fn handle_event2<T>(&self, id:usize, conn: &mut Conn, mut read_buffer: &mut [u8], event_handler: &Arc<T>) -> bool
         where T: NetEvents + 'static + Sync + Send + Sized{
         let mut close = false;
         loop {
